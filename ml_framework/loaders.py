@@ -1,0 +1,81 @@
+"""
+Data Loader Strategies
+다양한 데이터 소스를 로드하는 구체적인 전략 구현
+"""
+
+from typing import Any
+from pathlib import Path
+from loguru import logger
+
+class CsvDataLoader:
+    """CSV 파일 로더"""
+
+    def load(self, source: str | Path) -> Any:
+        logger.info(f"Loading CSV data from: {source}")
+        # 실제 구현:
+        # import pandas as pd
+        # return pd.read_csv(source)
+        return {"data": "csv_data", "source": str(source)}
+
+
+class JsonDataLoader:
+    """JSON 파일 로더"""
+
+    def load(self, source: str | Path) -> Any:
+        logger.info(f"Loading JSON data from: {source}")
+        # 실제 구현:
+        # import pandas as pd
+        # return pd.read_json(source)
+        return {"data": "json_data", "source": str(source)}
+
+
+class RtemsJsonDataLoader:
+    """RTEMS 스케줄링 실험 데이터 로더
+
+    각 experiment는 가변 길이의 tasks 배열을 포함하며,
+    각 task는 ID, CA(cache affinity), U(utilization) 정보를 가짐.
+    label은 스케줄링 정책 (0: global, 1: clustered, 2: partitioned)
+    """
+
+    def load(self, source: str | Path) -> Any:
+        """RTEMS JSON 데이터를 pandas DataFrame으로 로드
+
+        Args:
+            source: JSON 파일 경로
+
+        Returns:
+            pandas DataFrame with columns: experiment_id, tasks, label
+        """
+        import json
+        import pandas as pd
+
+        logger.info(f"Loading RTEMS experiment data from: {source}")
+
+        with open(source, 'r') as f:
+            data = json.load(f)
+
+        # experiments 키가 있는지 확인
+        if isinstance(data, dict) and 'experiments' in data:
+            experiments = data['experiments']
+        elif isinstance(data, list):
+            experiments = data
+        else:
+            raise ValueError("JSON must contain 'experiments' key or be a list of experiments")
+
+        logger.info(f"Loaded {len(experiments)} experiments")
+
+        # DataFrame 생성
+        df = pd.DataFrame(experiments)
+        logger.debug(f"Raw data's df:\n {df.head()}")
+
+        # 필수 컬럼 확인
+        required_cols = ['tasks', 'label']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}")
+
+        logger.info(f"Data shape: {df.shape}")
+        logger.info(f"Label distribution:\n{df['label'].value_counts().sort_index()}")
+
+        return df
+

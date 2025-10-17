@@ -206,4 +206,148 @@ class RtemsFeatureEngineeringPreprocessor:
 
     def fit_transform(self, data: Any) -> Any:
         return self.fit(data).transform(data)
-    
+
+
+class MemoryPatternPaddingPreprocessor:
+    """메모리 패턴 데이터를 위한 패딩 전처리기
+
+    가변 길이의 task 배열을 고정 길이로 변환:
+    - memory_pattern의 값들만 추출 (메모리 주소는 무시)
+    - ca (cache affinity) 값 추출
+    - 패딩 시 실제 0과 null을 구분하기 위해 -999.0을 패딩 값으로 사용
+    - 각 task당 최대 memory_pattern 개수를 찾아 패딩
+    """
+
+    def __init__(self, max_tasks: int = None, max_memory_entries: int = None, padding_value: float = -999.0):
+        """
+        Args:
+            max_tasks: 최대 task 개수 (None이면 학습 데이터에서 자동 결정)
+            max_memory_entries: 각 task당 최대 memory pattern 엔트리 수 (None이면 자동 결정)
+            padding_value: 패딩에 사용할 값 (실제 0과 구분하기 위해 -999.0 사용)
+        """
+        self.max_tasks = max_tasks
+        self.max_memory_entries = max_memory_entries
+        self.padding_value = padding_value
+        self._is_fitted = False
+        self._target_columns = None
+
+    def fit(self, data: Any) -> "MemoryPatternPaddingPreprocessor":
+        """데이터로부터 최대 길이 학습"""
+        import pandas as pd
+
+        logger.info("Fitting MemoryPatternPaddingPreprocessor")
+
+        df = data.copy()
+
+        # 최대 task 수 결정
+        if self.max_tasks is None:
+            task_counts = df['tasks'].apply(len)
+            self.max_tasks = int(task_counts.max())
+            logger.info(f"Auto-detected max_tasks: {self.max_tasks}")
+
+        # 최대 memory_pattern 엔트리 수 결정
+        if self.max_memory_entries is None:
+            max_entries = 0
+            for _, row in df.iterrows():
+                for task in row['tasks']:
+                    if 'memory_pattern' in task:
+                        max_entries = max(max_entries, len(task['memory_pattern']))
+            self.max_memory_entries = max_entries
+            logger.info(f"Auto-detected max_memory_entries: {self.max_memory_entries}")
+
+        # 타겟 컬럼 이름 저장 (performance_metrics 구조 파악)
+        if 'performance_metrics' in df.columns:
+            sample_metrics = df['performance_metrics'].iloc[0]
+            self._target_columns = []
+            for key in ['g', 'c', 'p']:
+                if key in sample_metrics:
+                    for metric in ['execution_time', 'turnaround_time']:
+                        if metric in sample_metrics[key]:
+                            self._target_columns.append(f"{key}_{metric}")
+            logger.info(f"Target columns: {self._target_columns}")
+
+        self._is_fitted = True
+        logger.info(f"Padding config: max_tasks={self.max_tasks}, max_memory_entries={self.max_memory_entries}, padding_value={self.padding_value}")
+        return self
+
+    def transform(self, data: Any) -> Any:
+        """가변 길이 데이터를 고정 길이로 패딩"""
+        import pandas as pd
+        import numpy as np
+
+        if not self._is_fitted:
+            raise RuntimeError("Preprocessor must be fitted before transform")
+
+        logger.info("Transforming data with padding")
+
+        df = data.copy()
+
+        # 각 샘플을 고정 길이 벡터로 변환
+        X_list = []
+        y_list = []
+
+        for idx, row in df.iterrows():
+            tasks = row['tasks']
+
+            # 각 task를 벡터로 변환
+            task_vectors = []
+            for task in tasks:
+                # memory_pattern의 값들만 추출 (주소는 무시)
+                memory_values = []
+                if 'memory_pattern' in task and task['memory_pattern']:
+                    memory_values = list(task['memory_pattern'].values())
+
+                # 고정 길이로 패딩
+                padded_memory = memory_values + [self.padding_value] * (self.max_memory_entries - len(memory_values))
+                padded_memory = padded_memory[:self.max_memory_entries]  # 초과 시 자르기
+
+                # ca 값 추가
+                ca_value = task.get('ca', self.padding_value)
+
+                # task 벡터: [memory_pattern_values..., ca]
+                task_vector = padded_memory + [ca_value]
+                task_vectors.append(task_vector)
+
+            # task 수를 max_tasks로 패딩
+            feature_dim = self.max_memory_entries + 1  # memory_entries + ca
+            while len(task_vectors) < self.max_tasks:
+                task_vectors.append([self.padding_value] * feature_dim)
+
+            # 초과 시 자르기
+            task_vectors = task_vectors[:self.max_tasks]
+
+            # Flatten: [task0_mem0, task0_mem1, ..., task0_ca, task1_mem0, ...]
+            X_vector = np.array(task_vectors).flatten()
+            X_list.append(X_vector)
+
+            # 타겟 값 추출 (있는 경우)
+            if 'performance_metrics' in df.columns:
+                metrics = row['performance_metrics']
+                y_vector = []
+                for col in self._target_columns:
+                    key, metric = col.split('_', 1)
+                    y_vector.append(metrics[key][metric])
+                y_list.append(y_vector)
+
+        # numpy 배열로 변환
+        X = np.array(X_list)
+        logger.info(f"Transformed X shape: {X.shape}")
+
+        if y_list:
+            y = np.array(y_list)
+            logger.info(f"Transformed y shape: {y.shape}")
+            logger.info(f"Target columns: {self._target_columns}")
+
+            # X, y를 DataFrame으로 반환
+            result_df = pd.DataFrame(X)
+            for i, col in enumerate(self._target_columns):
+                result_df[f'target_{col}'] = y[:, i]
+
+            return result_df
+        else:
+            # 예측 시에는 X만 반환
+            return pd.DataFrame(X)
+
+    def fit_transform(self, data: Any) -> Any:
+        return self.fit(data).transform(data)
+

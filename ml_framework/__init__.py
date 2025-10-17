@@ -33,6 +33,7 @@ from .preprocessors import (
 from .models import (
     XGBoostClassifier,
     RandomForestClassifier,
+    NeuralNetworkRegressor,
 )
 
 from .tuners import (
@@ -74,8 +75,7 @@ __all__ = [
     # Models
     "XGBoostClassifier",
     "RandomForestClassifier",
-    "LightGBMClassifier",
-    "LogisticRegressionClassifier",
+    "NeuralNetworkRegressor",
 
     # Tuners
     "GridSearchTuner",

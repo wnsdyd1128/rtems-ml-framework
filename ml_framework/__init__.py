@@ -10,7 +10,7 @@ from .protocols import (
     TunerProtocol
 )
 
-from .config import PipelineConfig, ModelConfig
+from .config import PipelineConfig, ModelConfig, TaskType
 
 from .pipeline import MLPipeline
 from .builder import MLPipelineBuilder
@@ -55,6 +55,7 @@ __all__ = [
     # Config
     "PipelineConfig",
     "ModelConfig",
+    "TaskType",
 
     # Core
     "MLPipeline",

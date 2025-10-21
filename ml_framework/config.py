@@ -6,6 +6,13 @@ Configuration Module
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+from enum import Enum
+
+
+class TaskType(Enum):
+    """파이프라인 작업 타입"""
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
 
 
 @dataclass
@@ -16,6 +23,8 @@ class PipelineConfig:
     train_test_split: float = 0.2
     random_state: int = 42
     verbose: bool = True
+    task_type: TaskType = TaskType.CLASSIFICATION  # 작업 타입 (분류 또는 회귀)
+    target_columns: Optional[list] = None  # 회귀 작업에서 타겟 컬럼 지정 (None이면 자동 감지)
 
     def __post_init__(self):
         """설정 유효성 검사"""
@@ -24,6 +33,13 @@ class PipelineConfig:
 
         if self.random_state < 0:
             raise ValueError(f"random_state must be non-negative, got {self.random_state}")
+
+        # task_type이 문자열로 전달된 경우 Enum으로 변환
+        if isinstance(self.task_type, str):
+            try:
+                self.task_type = TaskType(self.task_type)
+            except ValueError:
+                raise ValueError(f"task_type must be 'classification' or 'regression', got {self.task_type}")
 
 
 @dataclass

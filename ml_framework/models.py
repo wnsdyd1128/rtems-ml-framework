@@ -445,6 +445,64 @@ class NeuralNetworkRegressor:
             return None
         return self.history
 
+    def save(self, path: str):
+        """모델 저장"""
+        import torch
+
+        if not self._is_fitted:
+            raise RuntimeError("Model must be fitted before saving")
+
+        checkpoint = {
+            'model_state_dict': self.model.state_dict(),
+            'hidden_layers': self.hidden_layers,
+            'activation': self.activation,
+            'output_dim': self.output_dim,
+            'feature_scaler': self._feature_scaler,
+            'target_scaler': self._target_scaler,
+            'history': self.history,
+            'hyperparameters': {
+                'learning_rate': self.learning_rate,
+                'batch_size': self.batch_size,
+                'epochs': self.epochs,
+                'validation_split': self.validation_split,
+                'early_stopping_patience': self.early_stopping_patience
+            }
+        }
+
+        torch.save(checkpoint, path)
+        logger.info(f"Model saved to {path}")
+
+    @classmethod
+    def from_checkpoint(cls, path: str, device: str = None) -> "NeuralNetworkRegressor":
+        """체크포인트에서 모델 로드"""
+        import torch
+
+        checkpoint = torch.load(path, map_location='cpu')
+
+        # 모델 인스턴스 생성
+        model = cls(
+            hidden_layers=checkpoint['hidden_layers'],
+            activation=checkpoint.get('activation', 'relu'),
+            output_dim=checkpoint['output_dim'],
+            device=device,
+            **checkpoint.get('hyperparameters', {})
+        )
+
+        # 스케일러 및 히스토리 복원
+        model._feature_scaler = checkpoint['feature_scaler']
+        model._target_scaler = checkpoint['target_scaler']
+        model.history = checkpoint.get('history', {'train_loss': [], 'val_loss': []})
+
+        # 모델 구조 빌드 및 가중치 로드
+        input_dim = model._feature_scaler.n_features_in_
+        model.model = model._build_model(input_dim)
+        model.model.load_state_dict(checkpoint['model_state_dict'])
+        model._is_fitted = True
+
+        logger.info(f"Model loaded from {path}")
+
+        return model
+
     def __repr__(self) -> str:
         return f"NeuralNetworkRegressor(hidden_layers={self.hidden_layers}, output_dim={self.output_dim}, device={self.device})"
 

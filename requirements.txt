@@ -3,6 +3,6 @@ numpy
 matplotlib
 pandas
 Pillow
-xgboostcle
+xgboost
 loguru
 torch
